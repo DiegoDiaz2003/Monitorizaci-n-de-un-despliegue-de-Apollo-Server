@@ -9,13 +9,15 @@ if ([string]::IsNullOrWhiteSpace($Region)) {
   $Region = "us-east-1"
 }
 
-$instanceIds = aws ec2 describe-instances `
+$instanceIdsRaw = aws ec2 describe-instances `
   --region $Region `
   --filters "Name=tag:Lab,Values=apollo-monitoring" "Name=instance-state-name,Values=pending,running,stopping,stopped" `
   --query "Reservations[].Instances[].InstanceId" `
   --output text
 
-if ($instanceIds) {
+$instanceIds = @($instanceIdsRaw -split "\s+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+if ($instanceIds.Count -gt 0) {
   aws ec2 terminate-instances --region $Region --instance-ids $instanceIds | Out-Null
   aws ec2 wait instance-terminated --region $Region --instance-ids $instanceIds
 }
