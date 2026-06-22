@@ -1,0 +1,46 @@
+metricbeat.modules:
+  - module: system
+    period: 10s
+    metricsets:
+      - cpu
+      - load
+      - memory
+      - network
+      - process
+      - process_summary
+      - filesystem
+      - fsstat
+      - uptime
+    processes: [".*"]
+    process.include_top_n:
+      by_cpu: 5
+      by_memory: 5
+
+  - module: docker
+    period: 10s
+    hosts: ["unix:///var/run/docker.sock"]
+    metricsets:
+      - container
+      - cpu
+      - diskio
+      - healthcheck
+      - info
+      - memory
+      - network
+
+system.hostfs: /hostfs
+
+processors:
+  - add_host_metadata: ~
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+
+setup.kibana:
+  host: "${KIBANA_HOST}"
+
+output.elasticsearch:
+  hosts: ["${ELASTICSEARCH_HOST}"]
+
+logging.level: info
+logging.to_stderr: true
+

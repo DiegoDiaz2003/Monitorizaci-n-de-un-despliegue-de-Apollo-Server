@@ -1,0 +1,38 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/nginx/access.log*
+    fields_under_root: true
+    fields:
+      log_type: nginx_access
+      environment: lab
+
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/nginx/error.log*
+    fields_under_root: true
+    fields:
+      log_type: nginx_error
+      environment: lab
+
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/apollo/app.log*
+    fields_under_root: true
+    fields:
+      log_type: apollo_json
+      environment: lab
+
+processors:
+  - add_host_metadata: ~
+  - add_cloud_metadata: ~
+
+output.logstash:
+  hosts: ["${LOGSTASH_HOST}"]
+
+logging.level: info
+logging.to_stderr: true
+

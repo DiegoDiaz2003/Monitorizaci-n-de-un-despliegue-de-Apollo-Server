@@ -1,0 +1,10 @@
+.env
+runtime/
+evidence/
+docs/capturas/source/
+docs/_render-final/
+node_modules/
+dist/
+*.zip
+*.log
+.DS_Store

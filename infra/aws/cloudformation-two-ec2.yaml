@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Two EC2 instances for Apollo Server monitoring with Elastic Stack."
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 key pair for SSH access.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the lab will be deployed.
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet with auto-assign public IPv4 enabled.
+
+  AllowedCidr:
+    Type: String
+    Description: Public CIDR allowed to access SSH, Apollo and Kibana.
+    Default: 0.0.0.0/0
+
+  AppInstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+
+  ObservabilityInstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+
+  UbuntuAmi:
+    Type: AWS::EC2::Image::Id
+    Description: Ubuntu 22.04 AMI ID. The helper script resolves the latest Canonical AMI.
+
+Resources:
+  ApolloSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Apollo Server access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedCidr
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AllowedCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: apollo-monitoring-app-sg
+
+  ObservabilitySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Elastic Stack access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedCidr
+        - IpProtocol: tcp
+          FromPort: 5601
+          ToPort: 5601
+          CidrIp: !Ref AllowedCidr
+        - IpProtocol: tcp
+          FromPort: 5601
+          ToPort: 5601
+          SourceSecurityGroupId: !Ref ApolloSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 8200
+          ToPort: 8200
+          SourceSecurityGroupId: !Ref ApolloSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 5044
+          ToPort: 5044
+          SourceSecurityGroupId: !Ref ApolloSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          SourceSecurityGroupId: !Ref ApolloSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: apollo-monitoring-observability-sg
+
+  ApolloInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: !Ref AppInstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref ApolloSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eux
+          apt-get update
+          apt-get install -y unzip curl ca-certificates
+          hostnamectl set-hostname apollo-server
+      Tags:
+        - Key: Name
+          Value: apollo-monitoring-app
+
+  ObservabilityInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: !Ref ObservabilityInstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref ObservabilitySecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 40
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eux
+          apt-get update
+          apt-get install -y unzip curl ca-certificates
+          hostnamectl set-hostname elastic-observability
+      Tags:
+        - Key: Name
+          Value: apollo-monitoring-observability
+
+Outputs:
+  ApolloPublicIp:
+    Description: Public IP for Apollo/Nginx.
+    Value: !GetAtt ApolloInstance.PublicIp
+
+  ApolloPrivateIp:
+    Description: Private IP for Apollo instance.
+    Value: !GetAtt ApolloInstance.PrivateIp
+
+  ObservabilityPublicIp:
+    Description: Public IP for Kibana/SSH.
+    Value: !GetAtt ObservabilityInstance.PublicIp
+
+  ObservabilityPrivateIp:
+    Description: Private IP for Elastic Stack.
+    Value: !GetAtt ObservabilityInstance.PrivateIp
+
+  ApolloUrl:
+    Description: Apollo Sandbox through Nginx.
+    Value: !Sub "http://${ApolloInstance.PublicIp}/"
+
+  KibanaUrl:
+    Description: Kibana URL.
+    Value: !Sub "http://${ObservabilityInstance.PublicIp}:5601"

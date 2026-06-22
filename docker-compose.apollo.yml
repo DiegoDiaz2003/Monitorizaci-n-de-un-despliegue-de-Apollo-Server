@@ -1,0 +1,75 @@
+version: "3.8"
+
+services:
+  apollo:
+    build:
+      context: ./apollo
+    container_name: apollo-server
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - ELASTIC_APM_ACTIVE=true
+      - ELASTIC_APM_SERVICE_NAME=apollo-server
+      - ELASTIC_APM_SERVER_URL=${APM_SERVER_URL}
+      - ELASTIC_APM_TRANSACTION_SAMPLE_RATE=1.0
+      - ELASTIC_APM_CAPTURE_BODY=transactions
+    volumes:
+      - ./runtime/apollo-logs:/usr/src/app/logs
+    expose:
+      - "4000"
+    networks:
+      - appnet
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: apollo-nginx
+    depends_on:
+      - apollo
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./runtime/nginx-logs:/var/log/nginx
+    ports:
+      - "80:80"
+    networks:
+      - appnet
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:${ELASTIC_VERSION:-7.9.3}
+    container_name: filebeat-apollo
+    user: root
+    command: ["--strict.perms=false", "-e"]
+    depends_on:
+      - nginx
+      - apollo
+    environment:
+      - LOGSTASH_HOST=${LOGSTASH_HOST}
+    volumes:
+      - ./elastic/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./runtime/nginx-logs:/var/log/nginx:ro
+      - ./runtime/apollo-logs:/var/log/apollo:ro
+    networks:
+      - appnet
+
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:${ELASTIC_VERSION:-7.9.3}
+    container_name: metricbeat-apollo
+    user: root
+    command: ["--strict.perms=false", "-e"]
+    depends_on:
+      - nginx
+    environment:
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST}
+      - KIBANA_HOST=${KIBANA_HOST}
+    volumes:
+      - ./elastic/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+      - /proc:/hostfs/proc:ro
+      - /:/hostfs:ro
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
